@@ -1,0 +1,19 @@
+{
+    "Email": "INSERT YOUR EMAIL",
+    "APIToken": "INSERT YOUR APITOKEN",
+    "CompanyDomain": "INSERT THE COMPANY EMAIL DOMAIN",
+
+    "JQLAbertoStatus": "INSERT THE DESIRED JQL FOR OPEN AND CLOSED TICKETS",
+    "JQLConcluidoStatus": "INSERT THE DESIRED JQL FOR CLOSED TICKETS",
+
+    "JQLSLA": "INSERT THE DESIRED JQL",
+
+    "FilePathStatus": "INSERT FILE PATH HERE/RelatorioStatus",
+    "FilePathSLA": "INSERT FILE PATH HERE/RelatorioSLA",
+
+    "StatusCustomer": "INSERT THE STATUS THAT REFER TO THE CUSTOMER",
+    "StatusCompany": "INSERT THE STATUS THAT REFER TO YOUR COMPANY",
+
+    "FilePathToSLALogs": "INSERT FILE PATH HERE/logSLA",
+    "FilePathStatusLogs": "INSERT FILE PATH HERE/logStatus"
+}
