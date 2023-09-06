@@ -24,17 +24,10 @@
 * Status Report
   - Returns you a *.xlsx* file containing the time duration of its respective Key status and the total amount of time of all status combined;
   - The *.xlsx* file has two sheets, one with only the resolved issues and the other with resolved and unresolved issues;
-  - You can manually configure if you want the sum of different status in the "Calculos.py" script.
-* Automated E-Mail services
-  - Weekly or Monthly e-mail sender, containing the reports exported from the scripts.
 
 ## Planned Features
 
-- Configuring an interface and giving more customization options for end-users with it. These options include:
-  - Setting which atlassian domain and project it wants to get;
-  - Configuring the account e-mail and token that will be used for authenticating the program to be executed in atlassian requests;
-  - Choosing which destination it will want its files to be exported;
-  - Selecting if it wants to automate the use of a weekly or monthly automated e-mail service, that will send the report for them in the time given.
+- Automated Email services.
   
 
 ## How To Use
@@ -52,7 +45,9 @@ $ cd Report-Generator-for-Jira
 $ pip install pandas openpyxl requests
 
 # Run the app
-$ python3 Main.py
+$ python3 SLA-Report.py
+$ python3 Status-Report.py
+
 ```
 
 ## Credits
