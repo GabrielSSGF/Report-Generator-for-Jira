@@ -44,6 +44,8 @@ $ cd Report-Generator-for-Jira
 # Install dependencies
 $ pip install pandas openpyxl requests
 
+* Configure the configData.json with the necessary information
+
 # Run the app
 $ python3 SLA-Report.py
 $ python3 Status-Report.py
