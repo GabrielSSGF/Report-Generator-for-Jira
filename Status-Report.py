@@ -228,12 +228,6 @@ def createStatusDataFrame(dataFrame, planilha):
         dataFramePivot = dataFramePivot.reindex(dataFramePivot.index[1:].tolist() + [dataFramePivot.index[0]])
         dataFramePivot.rename(index={"-": "Média"}, inplace=True)
 
-        if "Aguardando suporte" in dataFramePivot.columns:
-            dataFramePivot = dataFramePivot.drop("Aguardando suporte", axis=1)
-
-        if "Aberto" in dataFramePivot.columns:
-            dataFramePivot = dataFramePivot.drop("Aberto", axis=1)
-
         dataFramePivot = dataFramePivot.style.apply(estiloNegrito, dataFrame=dataFramePivot, axis=1)
 
         logging.info(f"*** DataFrame '{planilha}' de Status criado ***")
