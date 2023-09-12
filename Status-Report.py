@@ -174,21 +174,23 @@ def subtrairDatas(dataInicio, dataFim):
 def adjustDataInicioFimToServiceTime(dataTipo):
     sabado = 5
     domingo = 6
+    horarioInicioServico = int(dadosJson["ServiceTimeStart"])
+    horarioEncerramentoServico = int(dadosJson["ServiceTimeStop"])
     diaSemana = dataTipo.weekday()
     
     if diaSemana == sabado:
         dataTipo += timedelta(days=2)
-        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
+        dataTipo = dataTipo.replace(hour=horarioInicioServico, minute=0)
 
     elif diaSemana == domingo:
         dataTipo += timedelta(days=1)
-        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
+        dataTipo = dataTipo.replace(hour=horarioInicioServico, minute=0)
 
-    if dataTipo.time().hour > dadosJson["ServiceTimeStop"]:
-        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStop"], minute=0)
+    if dataTipo.time().hour > horarioEncerramentoServico:
+        dataTipo = dataTipo.replace(hour=horarioEncerramentoServico, minute=0)
 
-    elif dataTipo.time().hour < dadosJson["ServiceTimeStart"]:
-        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
+    elif dataTipo.time().hour < horarioInicioServico:
+        dataTipo = dataTipo.replace(hour=horarioInicioServico, minute=0)
     
     return dataTipo
 
