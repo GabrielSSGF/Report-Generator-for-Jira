@@ -7,9 +7,10 @@ from datetime import date, datetime
 
 def main():
     global dadosJson
+    dadosJson = getDataFromJsonFile()
     
     dataFrame = jsonToDataFrame(getApiJsonSLA())
-    print(dataFrame)
+    
     dataFrameSLAMensal = createSLADataFrame(dataFrame, 'relatórioSLA_Semanal')
     dataFrameSLASemanal = createSLADataFrame(dataFrame, 'relatórioSLA_Mensal')
 
@@ -177,7 +178,6 @@ def criacaoTabelaMensal(slas, qntd):
     return dataFrame
 
 def exportacaoXLSX(dataFrames, planilhas):
-    dadosJson = getDataFromJsonFile()
     dataAtual = datetime.now()
     diaAtual = dataAtual.strftime('%d')
     mesAtual = dataAtual.strftime("%m")
