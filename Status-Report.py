@@ -2,7 +2,6 @@ import datetime as dt
 from datetime import datetime, timedelta
 from dateutil.parser import parse
 import json
-import logging
 import openpyxl
 import pandas as pd
 import pytz
@@ -98,7 +97,6 @@ def requestIssueInfo(key, auth, tipoRequest):
         "Accept": "application/json"
     }
     response = requests.get(url, headers=headers, auth=auth)
-    logging.info("Request realizado")
     return response.json()
         
 def getCyclesData(item, timeType):
