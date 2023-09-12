@@ -11,9 +11,8 @@
     "FilePathStatus": "INSERT FILE PATH HERE/RelatorioStatus",
     "FilePathSLA": "INSERT FILE PATH HERE/RelatorioSLA",
 
-    "StatusCustomer": "INSERT THE STATUS THAT REFER TO THE CUSTOMER",
-    "StatusCompany": "INSERT THE STATUS THAT REFER TO YOUR COMPANY",
+    "StatusCustomer": ["INSERT THE STATUS THAT REFER TO THE CUSTOMER"],
+    "StatusCompany": ["INSERT THE STATUS THAT REFER TO YOUR COMPANY"],
 
-    "FilePathToSLALogs": "INSERT FILE PATH HERE/logSLA",
-    "FilePathStatusLogs": "INSERT FILE PATH HERE/logStatus"
+    "ColumnsToRemove": ["INSERT THE STATUS YOU WANT TO REMOVE FROM THE FILE"]
 }
