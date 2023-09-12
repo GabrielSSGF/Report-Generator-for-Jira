@@ -10,255 +10,168 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 def main():
-    data_atual = datetime.now()
-    dia_atual = data_atual.strftime('%d')
-    mes_atual = data_atual.strftime("%m")
-    ano_atual = data_atual.year
-
     global dadosJson
     dadosJson = getDataFromJsonFile()
-
-    logging.basicConfig(filename=f'{dadosJson["FilePathStatusLogs"]}_{dia_atual}-{mes_atual}-{ano_atual}.txt', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    responseAberto, responseConcluido = getJiraAPIResponse(dadosJson)
     
-    dataFrameAberto = responseJsonToDataframe(responseAberto, JQL_ABERTO)
-    dataFrameConcluido = responseJsonToDataframe(responseConcluido, JQL_CONCLUIDO)
+    dataFrameAberto, dataFrameConcluido, = createDataFrameForAnalysis()
+
+    dataFramePivotResolvidos = pivotDataFrame(dataFrameConcluido)
+    dataFramePivotAbertosEResolvidos = pivotDataFrame(dataFrameAberto)
     
-    planilhaNome = ['Resolvidos', 'Resolvidos-e-Abertos']
-
-    dataFramePivotResolvidos = createStatusDataFrame(dataFrameConcluido, planilhaNome[0])
-    dataFramePivotAbertosEResolvidos = createStatusDataFrame(dataFrameAberto, planilhaNome[1])
-
-    caminhoRelatorio = f'{dadosJson["FilePathStatus"]}_{dia_atual}-{mes_atual}-{ano_atual}.xlsx'
-    dataFrames = [dataFramePivotResolvidos, dataFramePivotAbertosEResolvidos]
-    exportacaoXLSX(dataFrames, planilhaNome, caminhoRelatorio)
-
-    logging.info("Relatório de Status gerado com sucesso")
+    dataFrameToExcel([dataFramePivotResolvidos, dataFramePivotAbertosEResolvidos])
 
 def getDataFromJsonFile():
     with open('configData.json', 'r') as arquivoJson:
         dadosJson = json.load(arquivoJson)
     return dadosJson
 
-def getJiraAPIResponse(configJson):
-    try:
-        url = f'https://{configJson["CompanyDomain"]}.atlassian.net/rest/api/3/search'
-        
-        global JQL_ABERTO, JQL_CONCLUIDO, AUTH
-        
-        JQL_ABERTO = configJson["JQLAbertoStatus"]
-        JQL_CONCLUIDO = configJson["JQLConcluidoStatus"]
-        AUTH = HTTPBasicAuth(configJson["Email"], configJson["APIToken"])
+def createDataFrameForAnalysis():
+    responseAberto, responseConcluido = getJiraAPIResponse()
+    return responseJsonToDataframe(responseAberto), responseJsonToDataframe(responseConcluido)
 
-        headers = {
-            "Accept": "application/json"
-        }
-
-        paramsAberto = {
-            "jql": JQL_ABERTO,
-            "maxResults": 100
-        }
-
-        paramsConcluido = {
-            "jql": JQL_CONCLUIDO,
-            "maxResults": 100
-        }
-
-        responseAberto = requests.get(url, headers=headers, auth=AUTH, params=paramsAberto)
-        responseConcluido = requests.get(url, headers=headers, auth=AUTH, params=paramsConcluido)
-
-        logging.info("*** Responses adquiridos com sucesso ***")
-        
-        return responseAberto, responseConcluido
-   
-    except Exception as e:
-        logging.exception("Um erro ocorreu em recebimento_apiJira: %s", str(e))
-
-def responseJsonToDataframe(response, jql):
-    try:
-        data = response.json()
-        issues = data['issues']
-        
-        listaDados = []
-        
-        remainingTimeFirstResponse = None
-        remaningTimeResolution = None
-        
-
-        for i in issues:
-            key = i['key']
-            cliente = i["fields"]["customfield_10163"]
-            completedCyclesFirstResponse = i['fields']['customfield_10037']['completedCycles']
-            completeCyclesResolution = i['fields']['customfield_10036']['completedCycles']
-            
-            remainingTimeFirstResponse = checkCompletedCycle(completedCyclesFirstResponse, 'customfield_10037', i)
-            remaningTimeResolution = checkCompletedCycle(completeCyclesResolution, 'customfield_10036', i)
-      
-            row = [key, cliente, remainingTimeFirstResponse, remaningTimeResolution]
-            
-            listaDados.extend(getAdditionalIssueInfo(key, jql, row))
-                        
-        dataFrame = pd.DataFrame(listaDados, columns=["Key", "Cliente", "Time to first response",
-                    "Time to resolution", "Status Transition.date", "Status Transition.to"])
-        
-        dataFrame.set_index("Key", inplace=True)
-            
-        logging.info("Json convertida para Data Frame.")
-                
-        return dataFrame
-    except Exception as e:
-        logging.exception("Um erro ocorreu em jsonToExcel: %s", str(e))
-        
-def checkCompletedCycle(completedCycle, customFieldType, loopIndex):            
-    if not completedCycle:
-        return getRemainingTimeIfCompleteCycleIsEmpty(customFieldType, loopIndex)
-    else: return getRemainingTime(completedCycle)
-
-def getRemainingTimeIfCompleteCycleIsEmpty(customField, loopIndex):
-    ongoingCycle = None
-    remainingTime = None
-    ongoingCycle = loopIndex['fields'][customField].get('ongoingCycle')
-    if ongoingCycle:
-        remainingTime = ongoingCycle['remainingTime']['friendly']
-        return remainingTime
-
-def getRemainingTime(completedCyclesType):
-    remainingTime = None
-    for j in range(len(completedCyclesType)):
-        if completedCyclesType[j]['remainingTime']['friendly'] is not None:
-            remainingTime = completedCyclesType[j]['remainingTime']['friendly']
-    return remainingTime
-        
-def getAdditionalIssueInfo(key, jql, row):
-    listaDados = []
-    requestAdicional = requestIssueExtraInfo(key, jql, AUTH)
-    dadosTransitions = requestAdicional['values']
-    createdDate = requestAdicional['values'][0]['created']
+def getJiraAPIResponse():
+    url = f'https://{dadosJson["CompanyDomain"]}.atlassian.net/rest/api/3/search'
     
-    quantidadeChamadas = 0
+    global AUTH
+    
+    jqlAberto = dadosJson["JQLAbertoStatus"]
+    jqlConcluido = dadosJson["JQLConcluidoStatus"]
+    AUTH = HTTPBasicAuth(dadosJson["Email"], dadosJson["APIToken"])
+
+    headers = {
+        "Accept": "application/json"
+    }
+
+    paramsAberto = {
+        "jql": jqlAberto,
+        "maxResults": 100
+    }
+
+    paramsConcluido = {
+        "jql": jqlConcluido,
+        "maxResults": 100
+    }
+
+    responseAberto = requests.get(url, headers=headers, auth=AUTH, params=paramsAberto)
+    responseConcluido = requests.get(url, headers=headers, auth=AUTH, params=paramsConcluido)
+    
+    return responseAberto, responseConcluido
+
+def responseJsonToDataframe(response):
+    data = response.json()
+    issues = data['issues']
+    
+    listaDados = []
+    
+    for i in issues:
+        key = i['key']
+        listaDados.extend(getAdditionalIssueInfo(key))
+    
+    dataFrame = pd.DataFrame(listaDados, columns=["Key", "Status Transition Date", "Status Transition To", "Time to first response", "Time to resolution"])
+    dataFrame.set_index("Key", inplace=True)
+            
+    return dataFrame
+        
+def getAdditionalIssueInfo(key):
+    listaDados = []
+    
+    requestStatusInfo = requestIssueInfo(key, AUTH, 'status')
+    requestSLAInfo = requestIssueInfo(key, AUTH, 'sla') 
+    dadosSLA = requestSLAInfo['values']
+    dadosTransitions = requestStatusInfo['values']
+    slaInfo = []
+    
+    for item in dadosSLA:
+        timeToSomething = getCyclesData(item, item['name'])
+        slaInfo.append(timeToSomething)
     
     for item in dadosTransitions:
-        listaDados.extend(addItemsDosFieldsNaListaDados(item, createdDate, row, quantidadeChamadas))
-        quantidadeChamadas += 1
-        
-    return listaDados
+        statusTransitionTo = item['status']               
+        statusTransitionDate = item['statusDate']['jira']
+        listaDados.append([key, statusTransitionDate, statusTransitionTo, slaInfo[0], slaInfo[1]])
     
-def addItemsDosFieldsNaListaDados(item, createdDate, row, quantidadeChamadas):
-    listaDados = []
-    for x in item['items']:
-        if 'field' not in x or x["field"] != "status":
-            continue
-        
-        rowCopy = row.copy()
-        if quantidadeChamadas == 0:
-            statusTransitionTo = x['fromString']
-            rowCopy += [createdDate, statusTransitionTo]
-        elif 'toString' in x:
-            statusTransitionTo = x['toString']
-            statusTransitionDate = item['created']
-            rowCopy += [statusTransitionDate, statusTransitionTo]
-        listaDados.append(rowCopy)
     return listaDados
 
-def requestIssueExtraInfo(key, jql, auth):
-    try:
-        url = f'https://{dadosJson["CompanyDomain"]}.atlassian.net/rest/api/2/issue/{key}/changelog'
-        headers = {
-            "Accept": "application/json"
-        }
-        params = {
-            "jql": jql,
-            "maxResults": 100
-        }
-        response = requests.get(url, headers=headers, auth=auth, params=params)
-        logging.info("Request realizado")
-        return response.json()
-    except Exception as e:
-        logging.exception("Um erro ocorreu em request_issues: %s", str(e))
-
-def createStatusDataFrame(dataFrame, planilha):
-    try:
-        dataFrame['Status Transition.date'] = dataFrame['Status Transition.date'].apply(lambda x: x if pd.notnull(x) else '')
-        dataFrame['next_transition_date'] = dataFrame.groupby('Key')['Status Transition.date'].shift(-1)
-
-        datetimeAtual = datetime.now(pytz.timezone("America/Sao_Paulo"))
-        dataAtual = datetimeAtual.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + datetimeAtual.strftime("%z")
-
-        dataFrame.loc[dataFrame['Status Transition.to'] != 'Concluído', 'next_transition_date'] = dataFrame.loc[dataFrame['Status Transition.to'] != 'Concluído', 'next_transition_date'].fillna(dataAtual)
-
-        dataFrame['Status Transition.date'] = dataFrame['Status Transition.date'].apply(lambda x: parse(x, fuzzy=True) if pd.notnull(x) else x)
-        dataFrame['next_transition_date'] = dataFrame['next_transition_date'].apply(lambda x: parse(x, fuzzy=True) if pd.notnull(x) else x)
-
-        dataFrame['Status Transition.date'] = dataFrame['Status Transition.date'].apply(lambda x: x.replace(tzinfo=None) if pd.notnull(x) else x)
-        dataFrame['next_transition_date'] = dataFrame['next_transition_date'].apply(lambda x: x.replace(tzinfo=None) if pd.notnull(x) else x)
-
-        dataFrame['Time Interval'] = dataFrame.apply(lambda row: subtrairDatas(row['Status Transition.date'], row['next_transition_date']), axis=1)
-
-        valoresTotais = ['Total', 'Total Empresa', 'Total Clientes']
-        total = calculoDeTotaleSLAs(dataFrame)
-
-        dataFramePivot = dataFrame.pivot_table(index=['Key', 'Cliente', 
-                                        'Time to first response', 'Time to resolution'],
-                            columns='Status Transition.to',
-                            values='Time Interval',
-                            aggfunc='sum')
-
-        for i in range(len(valoresTotais)):
-            dataFramePivot[valoresTotais[i]] = total[i]
-
-        colunas_numericas = dataFramePivot.select_dtypes(include='number')
-        medias = colunas_numericas.mean()
-        dataFramePivot = dataFramePivot.applymap(converterParaHorasMinutos)
-
-        dataFramePivot = dataFramePivot.reset_index()
-
-        novaLinha = pd.Series(medias, name='Média')
+def requestIssueInfo(key, auth, tipoRequest):
+    url = f'https://{dadosJson["CompanyDomain"]}.atlassian.net/rest/servicedeskapi/request/{key}/{tipoRequest}'
+    headers = {
+        "Accept": "application/json"
+    }
+    response = requests.get(url, headers=headers, auth=auth)
+    logging.info("Request realizado")
+    return response.json()
         
-        # SLAS
-        dataFramePivot['SLA First Response'] = dataFramePivot['Time to first response'].apply(lambda x: "Quebrado" if pd.notnull(x) and str(x).startswith('-') else "Cumprido")
-        dataFramePivot['SLA Resolution'] = dataFramePivot['Time to resolution'].apply(lambda x: "Quebrado" if pd.notnull(x) and str(x).startswith('-') else "Cumprido")
-        colunasTimeTo = ['Time to resolution', 'Time to first response']
-        dataFramePivot = dataFramePivot.drop(colunasTimeTo, axis=1)
+def getCyclesData(item, timeType):
+    if item['name'] == timeType:
+        if item['completedCycles'] and len(item['completedCycles']) > 0: timeToSomething = item['completedCycles'][0]['breached']
+        elif 'ongoingCycle' in item: timeToSomething = item['ongoingCycle']['breached']       
+    return timeToSomething 
 
-        dataFramePivot = dataFramePivot._append(novaLinha)
-        dataFramePivot.loc['Média'] = dataFramePivot.loc['Média'].apply(converterParaHorasMinutos)
-        
-        dataFramePivot = dataFramePivot.set_index('Key').sort_values(by='Key', ascending=True)
-        dataFramePivot = dataFramePivot.reindex(dataFramePivot.index[1:].tolist() + [dataFramePivot.index[0]])
-        dataFramePivot.rename(index={"-": "Média"}, inplace=True)
+def pivotDataFrame(dataFrame):
+    createTimeIntervalColumn(dataFrame)
 
-        dataFramePivot = dataFramePivot.style.apply(estiloNegrito, dataFrame=dataFramePivot, axis=1)
+    dataFramePivot = dataFrame.pivot_table(index=['Key', 'Time to first response', 'Time to resolution'],
+                        columns='Status Transition To',
+                        values='Time Interval',
+                        aggfunc='sum')
 
-        logging.info(f"*** DataFrame '{planilha}' de Status criado ***")
+    dataFramePivot = getTotalValuesFromGroups(dataFrame, dataFramePivot)
 
-        return dataFramePivot
-    except Exception as e:
-        logging.exception("Um erro ocorreu em createDataFramePivot: %s", str(e))
+    colunasNumericas = dataFramePivot.select_dtypes(include='number')
+    medias = colunasNumericas.mean()
+    dataFramePivot = dataFramePivot.applymap(converterParaHorasMinutos)
+
+    dataFramePivot = dataFramePivot.reset_index()
+
+    novaLinha = pd.Series(medias, name='Média')
+    
+    dataFramePivot = setSLAColumns(dataFramePivot)
+    dataFramePivot = setMeanLine(dataFramePivot, novaLinha)
+    dataFramePivot = removeUnnecessaryColumns(dataFramePivot, dadosJson["ColumnsToRemove"])
+    
+    dataFramePivot = dataFramePivot.style.apply(estiloNegrito, dataFrame=dataFramePivot, axis=1)
+
+    return dataFramePivot
+
+def createTimeIntervalColumn(dataFrame):
+    dataFrame['Status Transition Date'] = dataFrame['Status Transition Date'].apply(lambda x: x if pd.notnull(x) else '')
+    dataFrame['Previous Transition Date'] = dataFrame.groupby('Key')['Status Transition Date'].shift(+1)
+
+    datetimeAtual = datetime.now(pytz.timezone("America/Sao_Paulo"))
+    dataAtual = datetimeAtual.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + datetimeAtual.strftime("%z")
+
+    dataFrame.loc[dataFrame['Status Transition To'] != 'Concluído', 'Previous Transition Date'] = dataFrame.loc[dataFrame['Status Transition To'] != 'Concluído', 'Previous Transition Date'].fillna(dataAtual)
+
+    dataFrame['Status Transition Date'] = pd.to_datetime(dataFrame['Status Transition Date'])
+    dataFrame['Previous Transition Date'] = pd.to_datetime(dataFrame['Previous Transition Date'])
+
+    dataFrame['Time Interval'] = dataFrame.apply(lambda row: subtrairDatas(row['Status Transition Date'], row['Previous Transition Date']), axis=1)
+
+def getTotalValuesFromGroups(dataFrame, dataFramePivot):
+    valoresTotais = ['Total', 'Total Empresa', 'Total Clientes']
+    total = calculoDeTotaleSLAs(dataFrame)
+    for i in range(len(valoresTotais)):
+        dataFramePivot[valoresTotais[i]] = total[i]
+    
+    return dataFramePivot
 
 def subtrairDatas(dataInicio, dataFim):
-    try:
-        if pd.isnull(dataInicio) or pd.isnull(dataFim):
-            return None
-        
-        
-        dataInicio = adjustDataInicioFimToServiceTime(dataInicio)
-        dataFim = adjustDataInicioFimToServiceTime(dataFim)
-       
-        segundosTotais = (dataFim - dataInicio).total_seconds()
-        
-        if dataInicio.time() > dataFim.time():
-            dataFim = dataFim + dt.timedelta(days=1)
+    if pd.isnull(dataInicio) or pd.isnull(dataFim):
+        return None
+    
+    dataInicio = adjustDataInicioFimToServiceTime(dataInicio)
+    dataFim = adjustDataInicioFimToServiceTime(dataFim)
+   
+    segundosTotais = (dataFim - dataInicio).total_seconds()
+    
+    if dataInicio.time() > dataFim.time():
+        dataFim = dataFim + dt.timedelta(days=1)
 
-        diferenca = dataFim - dataInicio
-        
-        segundosTotais = removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio)
-        
-        logging.info("Datas subtraídas respeitando o horário comercial")
+    diferenca = dataFim - dataInicio
+    
+    segundosTotais = removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio)
 
-        return segundosTotais
-    except Exception as e:
-        logging.exception("Um erro ocorreu em subtrair_datas: %s", str(e))
+    return segundosTotais
         
 def adjustDataInicioFimToServiceTime(dataTipo):
     sabado = 5
@@ -267,17 +180,17 @@ def adjustDataInicioFimToServiceTime(dataTipo):
     
     if diaSemana == sabado:
         dataTipo += timedelta(days=2)
-        dataTipo = dataTipo.replace(hour=9, minute=0)
+        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
 
     elif diaSemana == domingo:
         dataTipo += timedelta(days=1)
-        dataTipo = dataTipo.replace(hour=9, minute=0)
+        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
 
-    if dataTipo.time().hour > 18:
-        dataTipo = dataTipo.replace(hour=18, minute=0)
+    if dataTipo.time().hour > dadosJson["ServiceTimeStop"]:
+        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStop"], minute=0)
 
-    elif dataTipo.time().hour < 9:
-        dataTipo = dataTipo.replace(hour=9, minute=0)
+    elif dataTipo.time().hour < dadosJson["ServiceTimeStart"]:
+        dataTipo = dataTipo.replace(hour=dadosJson["ServiceTimeStart"], minute=0)
     
     return dataTipo
 
@@ -308,102 +221,99 @@ def removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio):
     return segundosTotais
 
 def calculoDeTotaleSLAs(dataFrame):
-    try:
-        statusCliente = [dadosJson["StatusCustomer"]]
-        
-        statusEmpresa = [dadosJson["StatusCompany"]]
+    statusCliente = dadosJson["StatusCustomer"]
+    statusEmpresa = dadosJson["StatusCompany"]
+            
+    total = dataFrame.pivot_table(index=['Key'],
+                columns='Status Transition To',
+                values='Time Interval',
+                aggfunc='sum').sum(axis=1)
+    
+    totalCliente = totalPorStatus(statusCliente, dataFrame)
+    totalEmpresa = totalPorStatus(statusEmpresa, dataFrame)
 
-        total = dataFrame.pivot_table(index=['Key', 'Cliente'],
-                    columns='Status Transition.to',
-                    values='Time Interval',
-                    aggfunc='sum').sum(axis=1)
-        
-        totalCliente = totalPorStatus(statusCliente, dataFrame)
-        totalEmpresa = totalPorStatus(statusEmpresa, dataFrame)
-        
-        logging.info("*** Total de tempo por grupos calculado ***")
-
-        return total, totalEmpresa, totalCliente
-    except Exception as e:
-        logging.exception("Um erro ocorreu em calculoDeTotaleSLAs: %s", str(e))
+    return total, totalEmpresa, totalCliente
         
 def totalPorStatus(status, dataFrame):
-    try:
-        total = dataFrame[dataFrame['Status Transition.to'].isin(status)].pivot_table(
-            index=['Key', 'Cliente'],
-            columns='Status Transition.to',
-            values='Time Interval',
-            aggfunc='sum'
-        ).sum(axis=1)
+    total = dataFrame[dataFrame['Status Transition To'].isin(status)].pivot_table(
+        index=['Key'],
+        columns='Status Transition To',
+        values='Time Interval',
+        aggfunc='sum'
+    ).sum(axis=1)
+    
+    return total
         
-        logging.info("Total de grupo definido")
-        
-        return total
-    except Exception as e:
-        logging.exception("Um erro ocorreu em totalPorStatus: %s", str(e))
-        
+def setSLAColumns(dataFramePivot):
+    dataFramePivot['SLA First Response'] = dataFramePivot['Time to first response'].apply(lambda x: "Quebrado" if pd.notnull(x) and x == True else "Cumprido")
+    dataFramePivot['SLA Resolution'] = dataFramePivot['Time to resolution'].apply(lambda x: "Quebrado" if pd.notnull(x) and x == True else "Cumprido")
+    colunasTimeTo = ['Time to resolution', 'Time to first response']
+    dataFramePivot.drop(colunasTimeTo, axis=1, inplace=True)
+    return dataFramePivot
+
+def setMeanLine(dataFramePivot, linhaNova):
+    dataFramePivot.loc['Média'] = linhaNova
+    dataFramePivot.loc['Média'] = dataFramePivot.loc['Média'].apply(converterParaHorasMinutos)
+    dataFramePivot = dataFramePivot.set_index('Key').sort_values(by='Key', ascending=True)
+    dataFramePivot = dataFramePivot.reindex(dataFramePivot.index[1:].tolist() + [dataFramePivot.index[0]])
+    dataFramePivot.rename(index={"-": "Média"}, inplace=True)
+    return dataFramePivot
+
+def removeUnnecessaryColumns(dataFramePivot, columnsToRemove):
+    if columnsToRemove:
+        for item in columnsToRemove:
+            dataFramePivot = checkIfItemIsInDataFrame(item, dataFramePivot)
+    return dataFramePivot
+
+def checkIfItemIsInDataFrame(item, dataFrame):
+    if item in dataFrame.columns:
+        dataFrame.drop(item, axis=1, inplace=True)
+    return dataFrame
+
 def converterParaHorasMinutos(valor):
-    try:
-        if pd.isnull(valor):
-            return "-"
+    if pd.isnull(valor):
+        return "-"
 
-        hora = int(valor / 3600)
-        minutos = int(valor % 3600) // 60
-        
-        logging.info("Valores convertidos para horas e minutos")
+    hora = int(valor / 3600)
+    minutos = int(valor % 3600) // 60
 
-        return f'{hora:02d}h{minutos:02d}'
-    except Exception as e:
-        logging.exception("Um erro ocorreu em converterParaHorasMinutos: %s", str(e))
+    return f'{hora:02d}h{minutos:02d}'
 
 def estiloNegrito(row, dataFrame):
-    try:
-        if row.name == dataFrame.index[-1]:
-            return ['font-weight: bold'] * len(row)
-        
-        logging.info("Estilo da linha definido em negrito")
-        
-        return [''] * len(row)
-    except Exception as e:
-        logging.exception("Um erro ocorreu em estilo_negrito: %s", str(e))
+    if row.name == dataFrame.index[-1]:
+        return ['font-weight: bold'] * len(row)
+    return [''] * len(row)
+
+def dataFrameToExcel(dataFrames):
+    dataAtual = datetime.now()
+    diaAtual = dataAtual.strftime('%d')
+    mesAtual = dataAtual.strftime("%m")
+    anoAtual = dataAtual.year
+
+    caminhoRelatorio = f'{dadosJson["FilePathStatus"]}_{diaAtual}-{mesAtual}-{anoAtual}.xlsx'
+    exportacaoXLSX(dataFrames, ['Resolvidos', 'Resolvidos-e-Abertos'], caminhoRelatorio)
 
 def exportacaoXLSX(data_frames, planilhas, caminho_relatorio):
-    try:
-        writer = pd.ExcelWriter(caminho_relatorio, engine='openpyxl')
-        for i, dataFrame in enumerate(data_frames):
-            dataFrame.to_excel(writer, sheet_name=planilhas[i])
-            workbook = writer.book
-            worksheet = workbook[planilhas[i]]
-            padraoDeColunas(worksheet)
-        writer._save()
-        
-        logging.info("DataFrames de Status exportado como Excel")
-        
-    except Exception as e:
-        logging.exception("Um erro ocorreu em exportacao_xlsx: %s", str(e))
+    writer = pd.ExcelWriter(caminho_relatorio, engine='openpyxl')
+    for i, dataFrame in enumerate(data_frames):
+        dataFrame.to_excel(writer, sheet_name=planilhas[i])
+        workbook = writer.book
+        worksheet = workbook[planilhas[i]]
+        padraoDeColunas(worksheet)
+    writer._save()
 
 def padraoDeColunas(worksheet):
-    try:
-        colunas = ['D', 'H', 'M', 'N', 
-                'S', 'T', 'V', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG']
-        
-        colunas_large = ['C', 'E', 'G', 'I', 'J', 'O', 'P', 'R', 'U', 'W', 
-                        'F', 'Q', 'K', 'L', 'R', 'X', 'Y']
-        
-        # Definir a largura das colunas
-        worksheet.column_dimensions['A'].width = 13
-        worksheet.column_dimensions['B'].width = 62
-
-        for i in range(len(colunas_large)):
-            worksheet.column_dimensions[colunas_large[i]].width = 30
-
-        for i in range(len(colunas)):
-            worksheet.column_dimensions[colunas[i]].width = 20
-            
-        logging.info("Padrão de colunas estabelecido")
-        
-    except Exception as e:
-        logging.exception("Um erro ocorreu em padrao_de_colunas: %s", str(e))
+    colunas = ['B', 'D', 'H', 'M', 'N', 
+            'S', 'T', 'V', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH']
+    
+    colunasLarge = ['C', 'E', 'G', 'I', 'J', 'O', 'P', 'R', 'U', 'W', 
+                    'F', 'Q', 'K', 'L', 'R', 'X', 'Y']
+    
+    worksheet.column_dimensions['A'].width = 13
+    for i in range(len(colunasLarge)):
+        worksheet.column_dimensions[colunasLarge[i]].width = 30
+    for i in range(len(colunas)):
+        worksheet.column_dimensions[colunas[i]].width = 20
 
 if __name__ == '__main__':
     main()
