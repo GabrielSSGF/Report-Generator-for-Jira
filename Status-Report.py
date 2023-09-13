@@ -107,14 +107,16 @@ def getCyclesData(item, timeType):
 
 def pivotDataFrame(dataFrame):
     createTimeIntervalColumn(dataFrame)
-
+    
     dataFramePivot = dataFrame.pivot_table(index=['Key', 'Time to first response', 'Time to resolution'],
                         columns='Status Transition To',
                         values='Time Interval',
                         aggfunc='sum')
-
+    
     dataFramePivot = getTotalValuesFromGroups(dataFrame, dataFramePivot)
-
+    
+    print(dataFramePivot)
+    
     colunasNumericas = dataFramePivot.select_dtypes(include='number')
     medias = colunasNumericas.mean()
     dataFramePivot = dataFramePivot.applymap(converterParaHorasMinutos)
@@ -148,34 +150,40 @@ def createTimeIntervalColumn(dataFrame):
 def getTotalValuesFromGroups(dataFrame, dataFramePivot):
     valoresTotais = ['Total', 'Total Empresa', 'Total Clientes']
     total = calculoDeTotaleSLAs(dataFrame)
-    for i in range(len(valoresTotais)):
-        dataFramePivot[valoresTotais[i]] = total[i]
+    total = [serie.tolist() for serie in total]
     
+    for i in range(len(valoresTotais)):
+        dataFramePivot[valoresTotais[i]] = total[i] 
     return dataFramePivot
 
 def subtrairDatas(dataInicio, dataFim):
     if pd.isnull(dataInicio) or pd.isnull(dataFim):
         return None
     
-    dataInicio = adjustDataInicioFimToServiceTime(dataInicio)
-    dataFim = adjustDataInicioFimToServiceTime(dataFim)
+    horarioInicioServico = int(dadosJson["ServiceTimeStart"])
+    horarioEncerramentoServico = int(dadosJson["ServiceTimeStop"])
+    
+    dataInicio = adjustDataInicioFimToServiceTime(dataInicio, horarioInicioServico, horarioEncerramentoServico)
+    dataFim = adjustDataInicioFimToServiceTime(dataFim, horarioInicioServico, horarioEncerramentoServico)
    
     segundosTotais = (dataFim - dataInicio).total_seconds()
     
     if dataInicio.time() > dataFim.time():
         dataFim = dataFim + dt.timedelta(days=1)
 
+    totalHorasPorDia = 24
+    totalSegundosPorHora = 3600
     diferenca = dataFim - dataInicio
+    totalPeriodoServico = horarioEncerramentoServico - horarioInicioServico
+    segundosForaPeriodoServico = (totalHorasPorDia - totalPeriodoServico) * totalSegundosPorHora if totalPeriodoServico > 0 else (totalHorasPorDia - totalPeriodoServico*-1) * totalSegundosPorHora
     
-    segundosTotais = removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio)
+    segundosTotais = removeSegundosForaDoServiceTime(segundosTotais, segundosForaPeriodoServico, diferenca, dataInicio)
 
     return segundosTotais
         
-def adjustDataInicioFimToServiceTime(dataTipo):
+def adjustDataInicioFimToServiceTime(dataTipo, horarioInicioServico, horarioEncerramentoServico):
     sabado = 5
     domingo = 6
-    horarioInicioServico = int(dadosJson["ServiceTimeStart"])
-    horarioEncerramentoServico = int(dadosJson["ServiceTimeStop"])
     diaSemana = dataTipo.weekday()
     
     if diaSemana == sabado:
@@ -194,7 +202,7 @@ def adjustDataInicioFimToServiceTime(dataTipo):
     
     return dataTipo
 
-def removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio):
+def removeSegundosForaDoServiceTime(segundosTotais, segundosForaPeriodoServico, diferenca, dataInicio):
     diasUteis = 0
     diasFimDeSemana = 0
     
@@ -212,10 +220,10 @@ def removeSegundosForaDoServiceTime(segundosTotais, diferenca, dataInicio):
         segundosTotais -= segundosFimDeSemana
 
     if diasUteis == 2:
-        segundosTotais -= 54000
+        segundosTotais -= segundosForaPeriodoServico
         
     elif diasUteis > 2:
-        segundosForaServico = (diasUteis-2) * 54000 + 54000
+        segundosForaServico = (diasUteis-2) * segundosForaPeriodoServico + segundosForaPeriodoServico
         segundosTotais -= segundosForaServico
     
     return segundosTotais
@@ -224,7 +232,7 @@ def calculoDeTotaleSLAs(dataFrame):
     statusCliente = dadosJson["StatusCustomer"]
     statusEmpresa = dadosJson["StatusCompany"]
             
-    total = dataFrame.pivot_table(index=['Key'],
+    total = dataFrame.pivot_table(index='Key',
                 columns='Status Transition To',
                 values='Time Interval',
                 aggfunc='sum').sum(axis=1)
@@ -236,7 +244,7 @@ def calculoDeTotaleSLAs(dataFrame):
         
 def totalPorStatus(status, dataFrame):
     total = dataFrame[dataFrame['Status Transition To'].isin(status)].pivot_table(
-        index=['Key'],
+        index='Key',
         columns='Status Transition To',
         values='Time Interval',
         aggfunc='sum'
