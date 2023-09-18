@@ -178,7 +178,7 @@ def totalPorStatus(status, dataFrame):
         aggfunc='sum'
     ).sum(axis=1)
     
-    total = total.reindex(dataFrame.index.unique(), fill_value=0)
+    total = total.reindex(dataFrame.index.unique(), fill_value=0).sort_index()
     
     return total
 
