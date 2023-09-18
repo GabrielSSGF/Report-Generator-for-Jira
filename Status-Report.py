@@ -20,7 +20,7 @@ def main():
     dataFrameToExcel([dataFramePivotResolvidos, dataFramePivotAbertosEResolvidos])
 
 def getDataFromJsonFile():
-    with open('configData.json', 'r') as arquivoJson:
+    with open('C:/Users/Gabriel/Desktop/Projetos/Abate da refatoração/configData.json', 'r', encoding='utf-8') as arquivoJson:
         dadosJson = json.load(arquivoJson)
     return dadosJson
 
@@ -85,6 +85,8 @@ def getAdditionalIssueInfo(key):
         slaInfo.append(timeToSomething)
     
     for item in dadosTransitions:
+        if item['status'] in dadosJson["ColumnsToRemove"]:
+            continue
         statusTransitionTo = item['status']               
         statusTransitionDate = item['statusDate']['jira']
         listaDados.append([key, statusTransitionDate, statusTransitionTo, slaInfo[0], slaInfo[1]])
@@ -112,10 +114,8 @@ def pivotDataFrame(dataFrame):
                         columns='Status Transition To',
                         values='Time Interval',
                         aggfunc='sum')
-    
+        
     dataFramePivot = getTotalValuesFromGroups(dataFrame, dataFramePivot)
-    
-    print(dataFramePivot)
     
     colunasNumericas = dataFramePivot.select_dtypes(include='number')
     medias = colunasNumericas.mean()
@@ -151,10 +151,36 @@ def getTotalValuesFromGroups(dataFrame, dataFramePivot):
     valoresTotais = ['Total', 'Total Empresa', 'Total Clientes']
     total = calculoDeTotaleSLAs(dataFrame)
     total = [serie.tolist() for serie in total]
-    
+        
     for i in range(len(valoresTotais)):
-        dataFramePivot[valoresTotais[i]] = total[i] 
+        dataFramePivot[valoresTotais[i]] = total[i]
     return dataFramePivot
+
+def calculoDeTotaleSLAs(dataFrame):
+    statusCliente = dadosJson["StatusCustomer"]
+    statusEmpresa = dadosJson["StatusCompany"]
+            
+    total = dataFrame.pivot_table(index='Key',
+                columns='Status Transition To',
+                values='Time Interval',
+                aggfunc='sum').sum(axis=1)
+    
+    totalCliente = totalPorStatus(statusCliente, dataFrame)
+    totalEmpresa = totalPorStatus(statusEmpresa, dataFrame)
+
+    return total, totalEmpresa, totalCliente
+        
+def totalPorStatus(status, dataFrame):
+    total = dataFrame[dataFrame['Status Transition To'].isin(status)].pivot_table(
+        index='Key',
+        columns='Status Transition To',
+        values='Time Interval',
+        aggfunc='sum'
+    ).sum(axis=1)
+    
+    total = total.reindex(dataFrame.index.unique(), fill_value=0)
+    
+    return total
 
 def subtrairDatas(dataInicio, dataFim):
     if pd.isnull(dataInicio) or pd.isnull(dataFim):
@@ -228,30 +254,6 @@ def removeSegundosForaDoServiceTime(segundosTotais, segundosForaPeriodoServico, 
     
     return segundosTotais
 
-def calculoDeTotaleSLAs(dataFrame):
-    statusCliente = dadosJson["StatusCustomer"]
-    statusEmpresa = dadosJson["StatusCompany"]
-            
-    total = dataFrame.pivot_table(index='Key',
-                columns='Status Transition To',
-                values='Time Interval',
-                aggfunc='sum').sum(axis=1)
-    
-    totalCliente = totalPorStatus(statusCliente, dataFrame)
-    totalEmpresa = totalPorStatus(statusEmpresa, dataFrame)
-
-    return total, totalEmpresa, totalCliente
-        
-def totalPorStatus(status, dataFrame):
-    total = dataFrame[dataFrame['Status Transition To'].isin(status)].pivot_table(
-        index='Key',
-        columns='Status Transition To',
-        values='Time Interval',
-        aggfunc='sum'
-    ).sum(axis=1)
-    
-    return total
-        
 def setSLAColumns(dataFramePivot):
     dataFramePivot['SLA First Response'] = dataFramePivot['Time to first response'].apply(lambda x: "Quebrado" if pd.notnull(x) and x == True else "Cumprido")
     dataFramePivot['SLA Resolution'] = dataFramePivot['Time to resolution'].apply(lambda x: "Quebrado" if pd.notnull(x) and x == True else "Cumprido")
